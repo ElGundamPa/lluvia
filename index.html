@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>¿Llueve en mi casa?</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --text: #17202a; --muted: #5d6d7e; --line: #dde3e9;
+    --dry: #2e86c1; --light: #48c9b0; --mod: #f39c12; --heavy: #c0392b; --none: #aab7b8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1419; --card: #1a222c; --text: #e8edf2; --muted: #93a1b0; --line: #2a3542; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 16px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: .9rem; margin: 0; }
+  main { max-width: 900px; margin: 0 auto; padding: 0 16px 24px; display: grid; gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  #estado { display: flex; gap: 14px; align-items: center; }
+  #icono { font-size: 2.6rem; line-height: 1; }
+  #titulo { font-size: 1.25rem; font-weight: 700; margin: 0; }
+  #detalle { color: var(--muted); margin: 4px 0 0; font-size: .92rem; }
+  .botones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  button.prim { background: var(--dry); color: #fff; border-color: var(--dry); }
+  #mapa { height: 380px; border-radius: 12px; border: 1px solid var(--line); }
+  .ayuda { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .leyenda { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: .82rem; color: var(--muted); }
+  .escala { display: grid; grid-template-columns: auto 200px; gap: 2px 8px; align-items: center; }
+  .barra { height: 10px; border-radius: 5px; background: linear-gradient(90deg, #9be7ff, #3fa9f5 18%, #2ecc71 36%, #f1c40f 54%, #e67e22 72%, #c0392b 86%, #8e44ad); }
+  .marcas { grid-column: 2; display: flex; justify-content: space-between; font-size: .72rem; }
+  .radar { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+  .radar input[type=range] { flex: 1; min-width: 80px; }
+  #radarHora { font-size: .88rem; white-space: nowrap; }
+  #radarHora.viejo { color: #c0392b; }
+  .leyenda label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+  footer { max-width: 900px; margin: 0 auto; padding: 0 16px 24px; color: var(--muted); font-size: .8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌧️ ¿Llueve en mi casa?</h1>
+  <p class="sub">Pluviómetros de SIATA en el Valle de Aburrá, en tiempo casi real.</p>
+</header>
+
+<main>
+  <section class="card" id="estado">
+    <div id="icono">⏳</div>
+    <div>
+      <p id="titulo">Cargando…</p>
+      <p id="detalle"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="botones">
+      <button class="prim" id="btnGps">📍 Usar mi ubicación</button>
+      <label>Radio:
+        <select id="radio">
+          <option value="1">1 km</option>
+          <option value="2" selected>2 km</option>
+          <option value="3">3 km</option>
+          <option value="5">5 km</option>
+        </select>
+      </label>
+      <button id="btnActualizar">🔄 Actualizar</button>
+    </div>
+    <p class="ayuda">O toca el mapa para marcar tu casa. Se guarda en este navegador.</p>
+  </section>
+
+  <div id="radarBar" class="card radar">
+    <button id="btnPlay" title="Animar últimas 3 horas">▶️</button>
+    <input type="range" id="slider" min="0" max="0" value="0">
+    <span id="radarHora">Radar: buscando…</span>
+  </div>
+  <div id="mapa"></div>
+  <div class="leyenda">
+    <label><input type="checkbox" id="verRadar" checked> Radar SIATA</label>
+    <span class="escala">
+      <span>Intensidad:</span>
+      <span class="barra" style="background:linear-gradient(90deg,#5b6fd6,#3fa9f5,#2ecc71,#f1c40f,#e67e22,#e74c3c,#d63384)"></span>
+      <span class="marcas"><span>Débil</span><span>Moderada</span><span>Fuerte</span></span>
+    </span>
+  </div>
+  <div class="leyenda">
+    <span class="escala">
+      <span>Lluvia (mm):</span>
+      <span class="barra"></span>
+      <span class="marcas"><span>0.1</span><span>1</span><span>3</span><span>5</span><span>10</span><span>20+</span></span>
+    </span>
+    <label><input type="checkbox" id="verCalor" checked> Calor por pluviómetros</label>
+    <label><input type="checkbox" id="verEstaciones" checked> Estaciones</label>
+  </div>
+
+  <section class="card">
+    <strong>Estaciones cercanas</strong>
+    <table>
+      <thead><tr><th>Estación</th><th>Barrio</th><th class="num">Dist.</th><th class="num">mm</th></tr></thead>
+      <tbody id="tabla"><tr><td colspan="4">—</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<footer>
+  Datos: <a href="https://siata.gov.co" target="_blank" rel="noopener">SIATA</a> (pluviómetros) y
+  <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (respaldo por modelo).
+  Se actualiza cada 5 minutos. <span id="hora"></span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const URL_SIATA = 'https://siata.gov.co/data/siata_app/Pluviometrica.json';
+const CENTRO = [6.2442, -75.5812]; // Medellín
+const COLOR = { dry: '#2e86c1', light: '#48c9b0', mod: '#f39c12', heavy: '#c0392b', none: '#aab7b8' };
+
+let estaciones = [];
+let casa = cargarCasa();
+let capaEstaciones, marcadorCasa, circulo;
+
+const mapa = L.map('mapa').setView(casa || CENTRO, casa ? 14 : 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18, attribution: '&copy; OpenStreetMap'
+}).addTo(mapa);
+capaEstaciones = L.layerGroup().addTo(mapa);
+
+function cargarCasa() {
+  try { const c = JSON.parse(localStorage.getItem('casa')); return Array.isArray(c) ? c : null; } catch { return null; }
+}
+function guardarCasa(c) { try { localStorage.setItem('casa', JSON.stringify(c)); } catch {} }
+
+function nivel(v) {
+  if (v == null || v < 0) return 'none';
+  if (v === 0) return 'dry';
+  if (v < 1) return 'light';
+  if (v <= 5) return 'mod';
+  return 'heavy';
+}
+function distKm(a, b) {
+  const R = 6371, r = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function cargarDatos() {
+  try {
+    const r = await fetch(URL_SIATA + '?t=' + Date.now());
+    const j = await r.json();
+    estaciones = (j.estaciones || []).filter(e => e.latitud && e.longitud);
+    if (location.search.includes('demo')) simularLluvia();
+    document.getElementById('hora').textContent = 'Última consulta: ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    estaciones = [];
+    mostrarEstado('⚠️', 'No pude conectar con SIATA', 'Revisa tu conexión e intenta de nuevo.');
+  }
+  pintar();
+}
+
+// ---------- Mapa de calor (interpolación IDW entre pluviómetros) ----------
+const ESCALA = [ // [mm, r, g, b]
+  [0.1, 155, 231, 255], [1, 63, 169, 245], [3, 46, 204, 113], [5, 241, 196, 15],
+  [10, 230, 126, 34], [15, 192, 57, 43], [20, 142, 68, 173]
+];
+const MIN_MM = 0.05;      // por debajo de esto se considera seco (transparente)
+const ALCANCE_KM = 3;     // más allá de esto de cualquier estación no se dibuja nada
+let capaCalor = null;
+
+function colorMm(v) {
+  if (v == null || v < 0) return 'rgb(170,183,184)';
+  if (v < MIN_MM) return COLOR.dry;
+  const [r, g, b] = rgbMm(v);
+  return `rgb(${r},${g},${b})`;
+}
+function rgbMm(v) {
+  if (v <= ESCALA[0][0]) return ESCALA[0].slice(1);
+  for (let i = 1; i < ESCALA.length; i++) {
+    if (v <= ESCALA[i][0]) {
+      const [a, b] = [ESCALA[i - 1], ESCALA[i]];
+      const t = (v - a[0]) / (b[0] - a[0]);
+      return [1, 2, 3].map(k => Math.round(a[k] + (b[k] - a[k]) * t));
+    }
+  }
+  return ESCALA[ESCALA.length - 1].slice(1);
+}
+
+function dibujarCalor() {
+  if (capaCalor) { mapa.removeLayer(capaCalor); capaCalor = null; }
+  if (!document.getElementById('verCalor').checked) return;
+  const pts = estaciones.filter(e => e.valor >= 0);
+  if (!pts.some(e => e.valor >= MIN_MM)) return; // nada lloviendo: no hay nada que pintar
+
+  const pad = 0.03;
+  const minLat = Math.min(...pts.map(e => e.latitud)) - pad, maxLat = Math.max(...pts.map(e => e.latitud)) + pad;
+  const minLon = Math.min(...pts.map(e => e.longitud)) - pad, maxLon = Math.max(...pts.map(e => e.longitud)) + pad;
+  const kmLat = 111.2, kmLon = 111.2 * Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const W = 260, H = Math.round(W * ((maxLat - minLat) * kmLat) / ((maxLon - minLon) * kmLon));
+
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  const P = pts.map(e => [e.latitud, e.longitud, e.valor]);
+
+  for (let y = 0; y < H; y++) {
+    const lat = maxLat - (y + .5) / H * (maxLat - minLat);
+    for (let x = 0; x < W; x++) {
+      const lon = minLon + (x + .5) / W * (maxLon - minLon);
+      let sw = 0, sv = 0, dmin = Infinity, exacto = null;
+      for (const [plat, plon, pv] of P) {
+        const dy = (lat - plat) * kmLat, dx = (lon - plon) * kmLon;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 0.0025) { exacto = pv; dmin = 0; break; }
+        const w = 1 / d2;
+        sw += w; sv += w * pv;
+        if (d2 < dmin) dmin = d2;
+      }
+      const v = exacto ?? sv / sw;
+      const d = Math.sqrt(dmin);
+      if (v < MIN_MM || d > ALCANCE_KM) continue;
+      const [r, g, b] = rgbMm(v);
+      const borde = Math.min(1, (ALCANCE_KM - d) / 1);           // se desvanece al final del alcance
+      const fuerza = Math.min(1, 0.45 + v / 4);                   // lluvia débil más transparente
+      const i = (y * W + x) * 4;
+      img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b;
+      img.data[i + 3] = Math.round(255 * borde * fuerza);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  capaCalor = L.imageOverlay(cv.toDataURL(), [[minLat, minLon], [maxLat, maxLon]], {
+    opacity: 0.75, interactive: false, className: 'calor'
+  }).addTo(mapa);
+  capaEstaciones.eachLayer(l => l._map && l.bringToFront());
+}
+
+// Modo demo (abrir con ?demo al final): inventa dos aguaceros para ver cómo se ve el mapa de calor.
+function simularLluvia() {
+  const nucleos = [[6.27, -75.57, 12, 2.5], [6.17, -75.60, 4, 3]]; // lat, lon, mm en el centro, radio km
+  for (const e of estaciones) {
+    if (e.valor < 0) continue;
+    e.valor = +nucleos.reduce((s, [la, lo, mm, r]) => {
+      const d = distKm([la, lo], [e.latitud, e.longitud]);
+      return s + (d < r * 1.5 ? mm * Math.exp(-(d * d) / (r * r)) : 0);
+    }, 0).toFixed(2);
+  }
+  mostrarAviso = true;
+}
+let mostrarAviso = false;
+
+function pintar() {
+  if (mostrarAviso) document.querySelector('.sub').textContent = '⚠️ MODO DEMO: datos inventados para probar el mapa de calor.';
+  capaEstaciones.clearLayers();
+  for (const e of estaciones) {
+    const llueve = e.valor >= MIN_MM;
+    L.circleMarker([e.latitud, e.longitud], {
+      radius: llueve ? 6 : 4,
+      color: '#fff', weight: 1, fillColor: colorMm(e.valor), fillOpacity: e.valor < 0 ? .5 : .95
+    }).bindPopup(`<b>${esc(e.nombre)}</b><br>${esc(e.barrio)} · ${esc(e.ciudad)}<br>${e.valor < 0 ? 'Sin dato' : e.valor + ' mm'}`)
+      .addTo(capaEstaciones);
+  }
+  dibujarCalor();
+  evaluarCasa();
+}
+
+async function evaluarCasa() {
+  if (marcadorCasa) mapa.removeLayer(marcadorCasa);
+  if (circulo) mapa.removeLayer(circulo);
+  if (!casa) {
+    mostrarEstado('🏠', 'Marca tu casa', 'Toca el mapa o usa tu ubicación para saber si llueve cerca.');
+    document.getElementById('tabla').innerHTML = '<tr><td colspan="4">—</td></tr>';
+    return;
+  }
+  const radio = +document.getElementById('radio').value;
+  marcadorCasa = L.marker(casa, { title: 'Mi casa' }).addTo(mapa).bindPopup('🏠 Mi casa');
+  circulo = L.circle(casa, { radius: radio * 1000, color: '#2e86c1', weight: 1, fillOpacity: .06 }).addTo(mapa);
+
+  const cerca = estaciones
+    .map(e => ({ ...e, d: distKm(casa, [e.latitud, e.longitud]) }))
+    .filter(e => e.d <= radio)
+    .sort((a, b) => a.d - b.d);
+  const conDato = cerca.filter(e => e.valor >= 0);
+
+  document.getElementById('tabla').innerHTML = cerca.length
+    ? cerca.map(e => `<tr><td><span class="dot" style="background:${colorMm(e.valor)}"></span>${esc(e.nombre)}</td><td>${esc(e.barrio)}</td><td class="num">${e.d.toFixed(1)} km</td><td class="num">${e.valor < 0 ? '—' : e.valor}</td></tr>`).join('')
+    : `<tr><td colspan="4">No hay estaciones a menos de ${radio} km.</td></tr>`;
+
+  if (conDato.length) {
+    const max = conDato.reduce((a, b) => (b.valor > a.valor ? b : a));
+    const lloviendo = conDato.filter(e => e.valor > 0);
+    if (!lloviendo.length) {
+      mostrarEstado('☀️', 'No está lloviendo cerca', `${conDato.length} estación(es) a menos de ${radio} km marcan 0 mm.`);
+    } else {
+      const n = nivel(max.valor);
+      const txt = { light: 'Lluvia débil cerca', mod: 'Lluvia moderada cerca', heavy: '¡Lluvia fuerte cerca!' }[n];
+      const ico = { light: '🌦️', mod: '🌧️', heavy: '⛈️' }[n];
+      mostrarEstado(ico, txt, `${lloviendo.length} de ${conDato.length} estaciones con lluvia. Máximo ${max.valor} mm en ${max.nombre} (${max.d.toFixed(1)} km).`);
+    }
+  } else {
+    // Respaldo: modelo de Open-Meteo para el punto exacto
+    mostrarEstado('🔎', 'Sin pluviómetros con dato cerca', 'Consultando el modelo de Open-Meteo…');
+    try {
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${casa[0]}&longitude=${casa[1]}&current=precipitation,rain&timezone=America%2FBogota`;
+      const j = await (await fetch(u)).json();
+      const p = j.current?.precipitation ?? 0;
+      mostrarEstado(p > 0 ? '🌧️' : '☀️', p > 0 ? 'Probablemente lloviendo' : 'Probablemente no llueve',
+        `Estimado por modelo (no medido): ${p} mm. Prueba un radio más grande para ver pluviómetros.`);
+    } catch {
+      mostrarEstado('❔', 'Sin datos cerca', 'Prueba un radio más grande.');
+    }
+  }
+}
+
+function mostrarEstado(icono, titulo, detalle) {
+  document.getElementById('icono').textContent = icono;
+  document.getElementById('titulo').textContent = titulo;
+  document.getElementById('detalle').textContent = detalle;
+}
+
+function ponerCasa(latlng) {
+  casa = [+latlng[0].toFixed(5), +latlng[1].toFixed(5)];
+  guardarCasa(casa);
+  evaluarCasa();
+}
+
+// ---------- Radar de SIATA (reflectividad 1°, imágenes cada ~5 min) ----------
+const RADAR_API = 'https://siata.gov.co/newpage/widget-animacion_radar-getRadarImages1.php';
+const RADAR_BOUNDS = [[5.1, -76.6], [7.3, -74.3]];
+const RADAR_VIEJO_MIN = 30;
+let frames = [];        // [{url, fecha}]
+let frameIdx = 0, capaRadar = null, animando = null;
+
+// ?fecha=2026-11-14T06:00 permite ver un momento pasado (hora de Colombia)
+function fechaConsulta() {
+  const f = new URLSearchParams(location.search).get('fecha');
+  const d = f ? new Date(f + (/[zZ+-]\d*:?\d*$/.test(f.slice(10)) ? '' : '-05:00')) : new Date();
+  return isNaN(d) ? new Date() : d;
+}
+
+async function cargarRadar() {
+  const hora = document.getElementById('radarHora');
+  try {
+    const fecha = Math.round(fechaConsulta().getTime() / 1000);
+    const j = await (await fetch(`${RADAR_API}?elevation=10&date=${fecha}&interval=3&nowcasting=false`)).json();
+    const nombres = j.nameImages || [];
+    frames = nombres.map((n, i) => ({
+      url: new URL(n, 'https://siata.gov.co/newpage/').href,
+      fecha: new Date(j.nameDates[i])
+    }));
+  } catch { frames = []; }
+
+  const slider = document.getElementById('slider');
+  slider.max = Math.max(0, frames.length - 1);
+  if (!frames.length) {
+    if (capaRadar) { mapa.removeLayer(capaRadar); capaRadar = null; }
+    hora.textContent = 'Radar SIATA sin datos en las últimas 3 h';
+    hora.className = 'viejo';
+    return;
+  }
+  frames.forEach(f => { const im = new Image(); im.src = f.url; }); // precarga para animar fluido
+  mostrarFrame(frames.length - 1);
+}
+
+function mostrarFrame(i) {
+  frameIdx = i;
+  document.getElementById('slider').value = i;
+  const f = frames[i];
+  if (!f) return;
+  if (document.getElementById('verRadar').checked) {
+    if (!capaRadar) capaRadar = L.imageOverlay(f.url, RADAR_BOUNDS, { opacity: 0.7, interactive: false }).addTo(mapa);
+    else capaRadar.setUrl(f.url);
+  }
+  const min = Math.round((fechaConsulta() - f.fecha) / 60000);
+  const hora = document.getElementById('radarHora');
+  hora.textContent = 'Radar: ' + f.fecha.toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    + (i === frames.length - 1 ? ` (hace ${min} min)` : '');
+  hora.className = (i === frames.length - 1 && min > RADAR_VIEJO_MIN) ? 'viejo' : '';
+}
+
+function alternarAnimacion() {
+  const b = document.getElementById('btnPlay');
+  if (animando) { clearInterval(animando); animando = null; b.textContent = '▶️'; return; }
+  if (frames.length < 2) return;
+  b.textContent = '⏸️';
+  animando = setInterval(() => mostrarFrame((frameIdx + 1) % frames.length), 450);
+}
+
+document.getElementById('btnPlay').addEventListener('click', alternarAnimacion);
+document.getElementById('slider').addEventListener('input', ev => mostrarFrame(+ev.target.value));
+document.getElementById('verRadar').addEventListener('change', ev => {
+  if (ev.target.checked) mostrarFrame(frameIdx);
+  else if (capaRadar) { mapa.removeLayer(capaRadar); capaRadar = null; }
+});
+
+mapa.on('click', ev => ponerCasa([ev.latlng.lat, ev.latlng.lng]));
+document.getElementById('radio').addEventListener('change', evaluarCasa);
+document.getElementById('verCalor').addEventListener('change', dibujarCalor);
+document.getElementById('verEstaciones').addEventListener('change', ev =>
+  ev.target.checked ? capaEstaciones.addTo(mapa) : mapa.removeLayer(capaEstaciones));
+document.getElementById('btnActualizar').addEventListener('click', cargarDatos);
+document.getElementById('btnGps').addEventListener('click', () => {
+  if (!navigator.geolocation) return mostrarEstado('⚠️', 'Tu navegador no da ubicación', 'Toca el mapa para marcar tu casa.');
+  mostrarEstado('📡', 'Buscando tu ubicación…', '');
+  navigator.geolocation.getCurrentPosition(
+    p => { ponerCasa([p.coords.latitude, p.coords.longitude]); mapa.setView(casa, 14); },
+    () => mostrarEstado('⚠️', 'No pude obtener tu ubicación', 'Toca el mapa para marcar tu casa.'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+cargarDatos();
+cargarRadar();
+setInterval(() => { cargarDatos(); if (!animando) cargarRadar(); }, 5 * 60 * 1000);
+</script>
+</body>
+</html>
